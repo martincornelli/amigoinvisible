@@ -1,0 +1,54 @@
+import {before,after,beforeEach,test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {initializeTestEnvironment,assertFails} from '@firebase/rules-unit-testing';
+import {doc,getDocFromServer,collection,getDocs,deleteDoc,updateDoc} from 'firebase/firestore';
+import {Repository} from '../src/repository.js';
+let env;
+const repo=uid=>new Repository(env.authenticatedContext(uid).firestore(),{currentUser:{uid}});
+before(async()=>{env=await initializeTestEnvironment({projectId:'demo-entre-nosotros',firestore:{rules:readFileSync('firestore.rules','utf8')}});});
+beforeEach(()=>env.clearFirestore());after(()=>env.cleanup());
+test('four web accounts create, join, set couples, draw and reopen private results',async()=>{
+ const owner=repo('owner'),other=repo('other'),third=repo('third'),fourth=repo('fourth');
+ const id=await owner.create({title:'Navidad',name:'Ana',capacity:4,budget:'1000'});
+ await other.join(id,'Bruno');await third.join(id,'Carla');await fourth.join(id,'Diego');
+ await owner.partner(id,'owner','other');await owner.partner(id,'third','fourth');
+ await owner.execute(id);
+ const names=[];
+ for(const [r,excluded] of [[owner,['Ana','Bruno']],[other,['Ana','Bruno']],[third,['Carla','Diego']],[fourth,['Carla','Diego']]]){
+   assert.equal((await r.list()).length,1);const current=await r.get(id);assert.equal(current.status,'drawn');
+   const name=await r.result(current);assert.ok(!excluded.includes(name));names.push(name);
+ }
+ assert.equal(new Set(names).size,4);
+ await assertFails(getDocFromServer(doc(owner.db,'exchanges',id,'results','other')));
+ await assertFails(getDocs(collection(owner.db,'exchanges',id,'results')));
+ await assert.rejects(owner.execute(id),/cerrado/);await assert.rejects(owner.remove(id),/cerrado/);
+});
+test('only creator deletes; cancelled invitation cannot be reused',async()=>{
+ const owner=repo('owner'),other=repo('other');
+ const id=await owner.create({title:'Error',name:'Ana',capacity:3,budget:''});await other.join(id,'Bruno');
+ await assert.rejects(other.remove(id),/creador/);await assertFails(deleteDoc(doc(other.db,'exchanges',id)));
+ await owner.remove(id);assert.equal((await owner.list()).length,0);assert.equal((await other.list()).length,0);
+ await assert.rejects(repo('late').join(id,'Caro'),/no existe/);
+});
+test('concurrent joins do not exceed capacity and membership cannot be impersonated',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Cupos',name:'Ana',capacity:3,budget:''});await repo('b').join(id,'B');
+ const outcomes=await Promise.allSettled([repo('c').join(id,'C'),repo('d').join(id,'D')]);
+ assert.equal(outcomes.filter(r=>r.status==='fulfilled').length,1);assert.equal((await owner.get(id)).memberIds.length,3);
+ await assertFails(updateDoc(doc(repo('stranger').db,'exchanges',id),{ownerId:'stranger'}));
+});
+test('partner changes require owner and handle unlinking and unavailable partners',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Parejas',name:'Ana',capacity:4,budget:''});
+ for(const name of ['b','c','d'])await repo(name).join(id,name);
+ await assert.rejects(repo('b').partner(id,'owner','b'),/creador/);
+ await owner.partner(id,'owner','b');await assert.rejects(owner.partner(id,'c','b'),/disponible/);
+ await owner.partner(id,'owner','c');const current=await owner.get(id);
+ assert.equal(current.people.b.partnerId,'');assert.equal(current.people.c.partnerId,'owner');
+ await owner.partner(id,'owner','');assert.equal((await owner.get(id)).people.c.partnerId,'');
+});
+test('50 results are atomic within Firestore rule access limits',async()=>{
+ const owner=repo('u0');const id=await owner.create({title:'Familia grande',name:'u0',capacity:50,budget:''});
+ for(let i=1;i<50;i++)await repo('u'+i).join(id,'u'+i);
+ await owner.execute(id);const current=await owner.get(id);assert.equal(current.status,'drawn');
+ for(const uid of ['u0','u24','u49'])assert.ok(current.participants.some(p=>p.name===undefined)===false && await repo(uid).result(current));
+});

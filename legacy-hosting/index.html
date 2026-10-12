@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Entre Nosotros · Una sorpresa en familia</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f9f7f0;color:#203d34;font:18px/1.6 system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px}main{max-width:560px;padding:36px;background:#fffdf8;border:1px solid #dedfd3;border-radius:28px}small{letter-spacing:.18em;font-size:12px;font-weight:700}h1{font-family:Georgia,serif;font-weight:400;font-size:clamp(34px,7vw,48px);line-height:1.15}p{color:#58645c}a{display:block;text-align:center;padding:16px;border-radius:14px;background:#203d34;color:white;font-weight:600;text-decoration:none}footer{margin-top:28px;font-size:13px;color:#6a766d}
+</style>
+<main>
+<small>ENTRE NOSOTROS</small>
+<h1>Una sorpresa.<br>Toda la familia.</h1>
+<p id="intro">Ahora podés usar Entre Nosotros desde iPhone, Android o computadora, sin instalar nada.</p>
+<a id="open" href="https://martincornelli.github.io/amigoinvisible/">Abrir Entre Nosotros</a>
+<footer>Entrá con la misma cuenta para encontrar tus encuentros compartidos. Compartí las invitaciones únicamente con quienes participarán.</footer>
+</main>
+<script>
+const match=location.pathname.match(/^\/join\/([a-f0-9]{48})\/?$/);
+if(match){
+ document.getElementById('intro').textContent='Te invitaron a un amigo invisible. Entrá con tu cuenta y sumate desde cualquier teléfono.';
+ document.getElementById('open').href='https://martincornelli.github.io/amigoinvisible/#join/'+match[1];
+ document.getElementById('open').textContent='Abrir mi invitación';
+}else if(location.pathname!=='/'){
+ document.getElementById('intro').textContent='Este enlace no tiene un código válido. Pedile una nueva invitación al organizador o abrí tus encuentros.';
+}
+</script>
+</html>

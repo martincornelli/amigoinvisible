@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function validPerson(p) {
+      return p.keys().hasOnly(['name', 'partnerId']) && p.name is string
+        && p.name.size() > 0 && p.name.size() <= 80 && p.partnerId is string;
+    }
+    match /exchanges/{id} {
+      function member() { return signedIn() && request.auth.uid in resource.data.memberIds; }
+      function owner() { return signedIn() && request.auth.uid == resource.data.ownerId; }
+      // An invitation is an unguessable 192-bit document ID. Knowing it allows
+      // an authenticated invitee to preview the group, but never private results.
+      allow get: if signedIn();
+      allow list: if member();
+      allow create: if signedIn() && id.matches('^[a-f0-9]{48}$')
+        && request.resource.data.keys().hasOnly(['title','capacity','budget','ownerId','memberIds','people','status'])
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.budget is string && request.resource.data.budget.size() <= 80
+        && request.resource.data.capacity is int && request.resource.data.capacity >= 3 && request.resource.data.capacity <= 50
+        && request.resource.data.status == 'open'
+        && request.resource.data.memberIds == [request.auth.uid]
+        && request.resource.data.people.keys().hasOnly([request.auth.uid])
+        && validPerson(request.resource.data.people[request.auth.uid])
+        && request.resource.data.people[request.auth.uid].partnerId == '';
+      allow update: if signedIn() && resource.data.status == 'open' && (
+        // Join only as yourself, without modifying any existing participant.
+        (!(request.auth.uid in resource.data.memberIds)
+          && resource.data.memberIds.size() < resource.data.capacity
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds','people'])
+          && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid])
+          && request.resource.data.people.diff(resource.data.people).affectedKeys().hasOnly([request.auth.uid])
+          && validPerson(request.resource.data.people[request.auth.uid])
+          && request.resource.data.people[request.auth.uid].partnerId == '')
+        // The trusted organizer manages exclusions before finalization.
+        || (owner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['people'])
+          && request.resource.data.people.keys() == resource.data.people.keys())
+        || (owner() && resource.data.memberIds.size() == resource.data.capacity
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'drawn')
+      );
+      allow delete: if owner() && resource.data.status == 'open';
+      match /results/{giver} {
+        function before() { return get(/databases/$(database)/documents/exchanges/$(id)).data; }
+        function after() { return getAfter(/databases/$(database)/documents/exchanges/$(id)).data; }
+        allow get: if signedIn() && request.auth.uid == giver && before().status == 'drawn';
+        allow list, update, delete: if false;
+        // Every result is created atomically with finalization; it cannot be
+        // rewritten. The organizer is trusted to publish the complete matching.
+        allow create: if signedIn() && before().ownerId == request.auth.uid
+          && before().status == 'open' && after().status == 'drawn'
+          && giver in before().memberIds
+          && request.resource.data.keys().hasOnly(['recipientId'])
+          && request.resource.data.recipientId in before().memberIds
+          && request.resource.data.recipientId != giver
+          && before().people[giver].partnerId != request.resource.data.recipientId
+          && before().people[request.resource.data.recipientId].partnerId != giver;
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

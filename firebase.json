@@ -1,0 +1,10 @@
+{
+  "firestore": {"rules":"firestore.rules"},
+  "hosting": {
+    "public":"legacy-hosting",
+    "ignore":["firebase.json","**/node_modules/**"],
+    "headers":[{"source":"**","headers":[{"key":"Referrer-Policy","value":"no-referrer"},{"key":"X-Content-Type-Options","value":"nosniff"}]}],
+    "rewrites":[{"source":"/join/**","destination":"/index.html"}]
+  },
+  "emulators":{"auth":{"port":9099},"firestore":{"port":8080},"ui":{"enabled":false},"singleProjectMode":true}
+}
