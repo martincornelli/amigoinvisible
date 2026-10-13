@@ -8,6 +8,54 @@ let env;
 const repo=uid=>new Repository(env.authenticatedContext(uid).firestore(),{currentUser:{uid}});
 before(async()=>{env=await initializeTestEnvironment({projectId:'demo-entre-nosotros',firestore:{rules:readFileSync('firestore.rules','utf8')}});});
 beforeEach(()=>env.clearFirestore());after(()=>env.cleanup());
+
+test('removing a participant clears their couple, keeps capacity and permits later rejoining',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Bajas',name:'Ana',capacity:4,budget:''});
+ for(const uid of ['b','c','d'])await repo(uid).join(id,uid);
+ await owner.partner(id,'owner','b');await owner.partner(id,'c','d');
+ await owner.removeParticipant(id,'b');let current=await owner.get(id);
+ assert.deepEqual(current.memberIds,['owner','c','d']);assert.equal(current.people.b,undefined);
+ assert.equal(current.people.owner.partnerId,'');assert.equal(current.people.c.partnerId,'d');
+ assert.equal(current.capacity,4);assert.equal((await repo('b').list()).length,0);
+ await assert.rejects(owner.execute(id),/faltan/);
+ await assert.rejects(owner.removeParticipant(id,'b'),/ya no/);
+ await repo('b').join(id,'B de nuevo');assert.equal((await owner.get(id)).people.b.partnerId,'');
+ await owner.removeParticipant(id,'b');await owner.capacity(id,3);
+ await owner.partner(id,'c','');await owner.execute(id);
+ await assert.rejects(owner.removeParticipant(id,'c'),/cerrado/);
+ current=await owner.get(id);
+ const people={...current.people};delete people.c;
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),{memberIds:['owner','d'],people}));
+});
+
+test('removal rules reject nonowners, owner removal, dangling partners and unrelated changes',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Permisos bajas',name:'Ana',capacity:4,budget:''});
+ for(const uid of ['b','c','d'])await repo(uid).join(id,uid);
+ await owner.partner(id,'b','c');const current=await owner.get(id);
+ const people={...current.people};delete people.b;
+ const change={memberIds:['owner','c','d'],people};
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),change));
+ people.c={...people.c,partnerId:''};
+ for(const uid of ['b','stranger'])await assertFails(updateDoc(doc(repo(uid).db,'exchanges',id),change));
+ await assert.rejects(repo('b').removeParticipant(id,'c'),/creador/);
+ await assert.rejects(owner.removeParticipant(id,'owner'),/organiza/);
+ const withoutOwner={...current.people};delete withoutOwner.owner;
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),{memberIds:['b','c','d'],people:withoutOwner}));
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),{...change,capacity:3}));
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),{...change,people:{...people,d:{name:'Changed',partnerId:''}}}));
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),{memberIds:['owner','d'],people:{owner:people.owner,d:people.d}}));
+ await owner.removeParticipant(id,'b');assert.equal((await owner.get(id)).people.c.partnerId,'');
+});
+
+test('concurrent removal and drawing never leave a partial finalized encounter',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Carrera',name:'Ana',capacity:3,budget:''});
+ await repo('b').join(id,'B');await repo('c').join(id,'C');
+ const outcomes=await Promise.allSettled([owner.removeParticipant(id,'b'),owner.execute(id)]);
+ assert.equal(outcomes.filter(r=>r.status==='fulfilled').length,1);
+ const current=await owner.get(id);
+ if(current.status==='drawn'){assert.equal(current.memberIds.length,3);assert.ok(await repo('b').result(current));}
+ else {assert.equal(current.memberIds.length,2);await assertFails(getDocFromServer(doc(owner.db,'exchanges',id,'results','owner')));}
+});
 test('four web accounts create, join, set couples, draw and reopen private results',async()=>{
  const owner=repo('owner'),other=repo('other'),third=repo('third'),fourth=repo('fourth');
  const id=await owner.create({title:'Navidad',name:'Ana',capacity:4,budget:'1000'});

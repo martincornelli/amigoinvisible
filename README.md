@@ -28,6 +28,8 @@ El dominio `martincornelli.github.io` debe estar en Authentication > Settings > 
 
 ## Datos y privacidad
 
+Antes del sorteo, el organizador puede editar el total o quitar participantes con confirmación. No puede quitarse a sí mismo. Quitar a alguien limpia su pareja y deja libre el cupo; el total se ajusta por separado. No es un bloqueo: esa persona puede volver a ingresar con la invitación si hay lugar.
+
 Usa el mismo esquema y las mismas cuentas que Android. Entrar con la misma cuenta conserva los encuentros compartidos existentes. Los encuentros guardados únicamente en el teléfono no se importan automáticamente.
 
 Las parejas se excluyen en ambos sentidos. Cada participante recibe y entrega exactamente un regalo. El algoritmo busca una asignación válida con aleatoriedad criptográfica; no promete distribución uniforme entre todas las asignaciones posibles.

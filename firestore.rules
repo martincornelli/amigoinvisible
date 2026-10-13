@@ -9,6 +9,16 @@ service cloud.firestore {
     match /exchanges/{id} {
       function member() { return signedIn() && request.auth.uid in resource.data.memberIds; }
       function owner() { return signedIn() && request.auth.uid == resource.data.ownerId; }
+      function validRemoval(removed) {
+        let partner = resource.data.people[removed].partnerId;
+        return removed != resource.data.ownerId
+          && request.resource.data.memberIds == resource.data.memberIds.removeAll([removed])
+          && request.resource.data.people.keys().toSet() == resource.data.people.keys().toSet().difference([removed].toSet())
+          && (partner == ''
+            ? request.resource.data.people.diff(resource.data.people).affectedKeys().hasOnly([removed])
+            : request.resource.data.people.diff(resource.data.people).affectedKeys().hasOnly([removed,partner])
+              && request.resource.data.people[partner] == {'name':resource.data.people[partner].name,'partnerId':''});
+      }
       // An invitation is an unguessable 192-bit document ID. Knowing it allows
       // an authenticated invitee to preview the group, but never private results.
       allow get: if signedIn();
@@ -39,6 +49,10 @@ service cloud.firestore {
           && request.resource.data.capacity is int
           && request.resource.data.capacity >= 3 && request.resource.data.capacity <= 50
           && request.resource.data.capacity >= resource.data.memberIds.size())
+        // Remove exactly one non-organizer and clear only that person's partner.
+        || (owner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds','people'])
+          && resource.data.memberIds.removeAll(request.resource.data.memberIds).size() == 1
+          && validRemoval(resource.data.memberIds.removeAll(request.resource.data.memberIds)[0]))
         // The trusted organizer manages exclusions before finalization.
         || (owner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['people'])
           && request.resource.data.people.keys() == resource.data.people.keys())

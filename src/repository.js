@@ -77,6 +77,20 @@ export class Repository {
       tx.update(this.ref(id),{capacity});
     });
   }
+  async removeParticipant(id, personId) {
+    const uid = this.uid;
+    await runTransaction(this.db, async tx => {
+      const current = parse(await tx.get(this.ref(id)));
+      this.editable(current,uid);
+      if (personId === current.ownerId) throw new Error('No podés quitar a quien organiza el encuentro.');
+      if (!current.memberIds.includes(personId)) throw new Error('Esa persona ya no está en el encuentro.');
+      const memberIds = current.memberIds.filter(id => id !== personId);
+      const people = Object.fromEntries(memberIds.map(id => [id,{
+        ...current.people[id], partnerId: current.people[id].partnerId === personId ? '' : current.people[id].partnerId
+      }]));
+      tx.update(this.ref(id),{memberIds,people});
+    });
+  }
   async execute(id) {
     const uid = this.uid;
     await runTransaction(this.db, async tx => {
