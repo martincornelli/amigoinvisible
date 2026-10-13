@@ -34,6 +34,11 @@ service cloud.firestore {
           && request.resource.data.people.diff(resource.data.people).affectedKeys().hasOnly([request.auth.uid])
           && validPerson(request.resource.data.people[request.auth.uid])
           && request.resource.data.people[request.auth.uid].partnerId == '')
+        // Only the organizer may resize an open encounter; preserve everyone already joined.
+        || (owner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['capacity'])
+          && request.resource.data.capacity is int
+          && request.resource.data.capacity >= 3 && request.resource.data.capacity <= 50
+          && request.resource.data.capacity >= resource.data.memberIds.size())
         // The trusted organizer manages exclusions before finalization.
         || (owner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['people'])
           && request.resource.data.people.keys() == resource.data.people.keys())

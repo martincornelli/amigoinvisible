@@ -52,3 +52,33 @@ test('50 results are atomic within Firestore rule access limits',async()=>{
  await owner.execute(id);const current=await owner.get(id);assert.equal(current.status,'drawn');
  for(const uid of ['u0','u24','u49'])assert.ok(current.participants.some(p=>p.name===undefined)===false && await repo(uid).result(current));
 });
+
+test('capacity can grow and shrink before the draw, preserving members and couples',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Cambios',name:'Ana',capacity:4,budget:''});
+ await repo('b').join(id,'Bruno');await repo('c').join(id,'Carla');await owner.partner(id,'owner','b');
+ await owner.capacity(id,5);let current=await owner.get(id);assert.equal(current.capacity,5);assert.equal(current.people.b.partnerId,'owner');
+ await owner.capacity(id,3);assert.equal((await owner.get(id)).capacity,3);
+ await assert.rejects(repo('d').join(id,'Diego'),/completo/);
+ await owner.capacity(id,4);await repo('d').join(id,'Diego');
+ await assert.rejects(owner.capacity(id,3),/anotadas/);
+ for(const value of [2,51,3.5,''])await assert.rejects(owner.capacity(id,value),/entre 3 y 50/);
+ await owner.execute(id);await assert.rejects(owner.capacity(id,5),/cerrado/);
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),{capacity:5}));
+});
+
+test('rules independently enforce capacity permissions and bounds',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Permisos',name:'Ana',capacity:4,budget:''});
+ for(const uid of ['b','c','d'])await repo(uid).join(id,uid);
+ await assert.rejects(repo('b').capacity(id,5),/creador/);
+ for(const uid of ['b','stranger'])await assertFails(updateDoc(doc(repo(uid).db,'exchanges',id),{capacity:5}));
+ for(const capacity of [2,3,51,4.5,'5'])await assertFails(updateDoc(doc(owner.db,'exchanges',id),{capacity}));
+ await assertFails(updateDoc(doc(owner.db,'exchanges',id),{capacity:5,ownerId:'b'}));
+});
+
+test('shrinking capacity while someone joins never overfills the encounter',async()=>{
+ const owner=repo('owner');const id=await owner.create({title:'Concurrencia',name:'Ana',capacity:4,budget:''});
+ await repo('b').join(id,'B');await repo('c').join(id,'C');
+ const outcomes=await Promise.allSettled([owner.capacity(id,3),repo('d').join(id,'D')]);
+ assert.equal(outcomes.filter(r=>r.status==='fulfilled').length,1);
+ const current=await owner.get(id);assert.equal(current.memberIds.length,current.capacity);
+});

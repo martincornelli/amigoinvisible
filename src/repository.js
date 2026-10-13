@@ -67,6 +67,16 @@ export class Repository {
     if (current.ownerId !== uid) throw new Error('Solo el creador puede hacer este cambio.');
     if (current.status !== 'open') throw new Error('El sorteo ya está cerrado.');
   }
+  async capacity(id, value) {
+    const uid = this.uid, capacity = Number(value);
+    if (!Number.isInteger(capacity) || capacity < 3 || capacity > 50) throw new Error('Elegí entre 3 y 50 participantes.');
+    await runTransaction(this.db, async tx => {
+      const current = parse(await tx.get(this.ref(id)));
+      this.editable(current,uid);
+      if (capacity < current.memberIds.length) throw new Error(`Ya hay ${current.memberIds.length} personas anotadas. La cantidad no puede ser menor.`);
+      tx.update(this.ref(id),{capacity});
+    });
+  }
   async execute(id) {
     const uid = this.uid;
     await runTransaction(this.db, async tx => {
